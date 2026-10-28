@@ -24,6 +24,7 @@ use nextgsim_rrc::procedures::dcch_dispatch::{
 use nextgsim_rrc::procedures::information_transfer::{
     encode_dl_information_transfer, DlInformationTransferParams,
 };
+use nextgsim_rrc::procedures::isac_payload::decode_isac_range_rtt;
 use nextgsim_rrc::procedures::measurement_report::MeasurementReportData;
 // The sidelink resource-request answer (issue #141).
 use nextgsim_rrc::procedures::paging::{encode_paging, PagingRecordParams, FIVE_G_S_TMSI_LEN};
@@ -747,6 +748,92 @@ impl RrcTask {
             }
             Ok(UlDcchMessage::MeasurementReport(data)) => {
                 self.handle_measurement_report(ue_id, &data).await;
+                true
+            }
+            Ok(UlDcchMessage::IsacRangeRttReport(report)) => {
+                info!(
+                    "Decoded ISAC report from UE[{}]: peer UE {}, distance={:.3} m, accuracy={:.3} m, count={}, method={}",
+                    ue_id, report.peer_ue_id, report.distance_m,
+                    report.accuracy_m, report.measurement_count, report.method
+                );
+
+                if let Some(ref sixg) = self.task_base.sixg {
+                    let msg = IsacMessage::IsacRangeRttReport {
+                        reporting_ue_id: ue_id,
+                        peer_ue_id: report.peer_ue_id,
+                        distance_m: report.distance_m,
+                        accuracy_m: report.accuracy_m,
+                        measurement_count: report.measurement_count,
+                        method: report.method,
+                    };
+
+                    if let Err(e) = sixg.isac_tx.send(msg).await {
+                        error!("Failed to route ISAC report from UE[{}]: {}", ue_id, e);
+                    }
+                } else {
+                    warn!(
+                        "Dropping ISAC report from UE[{}]: ISAC task unavailable",
+                        ue_id
+                    );
+                }
+                true
+            }
+            Ok(UlDcchMessage::MeasurementReportAppLayer(reports)) => {
+                for report in reports {
+                    let Some(container) = report.container.as_deref() else {
+                        warn!(
+                            "ISAC app-layer report from UE[{}] has no container (config_id={})",
+                            ue_id, report.config_id
+                        );
+                        continue;
+                    };
+
+                    match decode_isac_range_rtt(container) {
+                        Ok(raw_payload) => {
+                            let payload =
+                                nextgsim_rrc::procedures::isac_reporting::IsacRangeRttReport {
+                                    config_id: report.config_id,
+                                    peer_ue_id: raw_payload.peer_ue_id,
+                                    distance_m: raw_payload.range_m,
+                                    accuracy_m: 0.0,
+                                    measurement_count: 1,
+                                    method: format!("rtt={}ns", raw_payload.rtt_ns),
+                                };
+
+                            info!(
+                                "Decoded ISAC report from UE[{}]: peer UE {}, distance={:.3} m, accuracy={:.3} m, count={}, method={}",
+                                ue_id, payload.peer_ue_id, payload.distance_m,
+                                payload.accuracy_m, payload.measurement_count, payload.method
+                            );
+
+                            if let Some(ref sixg) = self.task_base.sixg {
+                                let msg = IsacMessage::IsacRangeRttReport {
+                                    reporting_ue_id: ue_id,
+                                    peer_ue_id: payload.peer_ue_id,
+                                    distance_m: payload.distance_m,
+                                    accuracy_m: payload.accuracy_m,
+                                    measurement_count: payload.measurement_count,
+                                    method: payload.method,
+                                };
+
+                                if let Err(e) = sixg.isac_tx.send(msg).await {
+                                    error!("Failed to route ISAC report from UE[{}]: {}", ue_id, e);
+                                }
+                            } else {
+                                warn!(
+                                    "Dropping ISAC report from UE[{}]: ISAC task unavailable",
+                                    ue_id
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Invalid ISAC report from UE[{}] (config_id={}): {}",
+                                ue_id, report.config_id, e
+                            );
+                        }
+                    }
+                }
                 true
             }
             Ok(UlDcchMessage::SecurityModeFailure { rrc_transaction_id }) => {

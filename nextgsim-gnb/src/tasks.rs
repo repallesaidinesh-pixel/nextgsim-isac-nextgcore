@@ -1147,6 +1147,22 @@ pub enum IsacMessage {
         /// Measurement values
         measurements: Vec<f32>,
     },
+    /// Experimental ISAC report received through the RRC app-layer container.
+    /// UE identities are kept separate from cell and anchor identifiers.
+    IsacRangeRttReport {
+        /// UE that reported the measurement
+        reporting_ue_id: i32,
+        /// Peer UE measured by the reporting UE
+        peer_ue_id: u64,
+        /// Geometry-derived distance in metres
+        distance_m: f64,
+        /// Reported distance accuracy in metres
+        accuracy_m: f64,
+        /// Number of measurements combined into this report
+        measurement_count: u32,
+        /// Ranging method (`rtt` or `carrier_phase`)
+        method: String,
+    },
     /// Position fusion request
     FusionRequest {
         /// UE identifier

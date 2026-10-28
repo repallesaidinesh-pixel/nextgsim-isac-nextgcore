@@ -1048,6 +1048,23 @@ impl SidelinkTask {
 
             // RTT of a round trip over `range_m`, at 0.3 m/ns.
             let rtt_ns = ((2.0 * range_m) / SPEED_OF_LIGHT_M_PER_NS).round() as u64;
+
+            // Forward the geometry-derived range/RTT to the UE RRC task.
+            // These values are simulator-modelled, not measured from PC5 radio timing.
+            #[cfg(feature = "nextgsim-isac")]
+            if let Err(e) = self
+                .task_base
+                .rrc_tx
+                .send(RrcMessage::IsacRangeRttReport {
+                    peer_ue_id: anchor.ue_id,
+                    range_m,
+                    rtt_ns,
+                    timestamp_ms,
+                })
+                .await
+            {
+                warn!("SL-PRS: failed to queue ISAC range/RTT report to RRC: {e}");
+            }
             self.positioning
                 .add_rtt_measurement(PositioningRttMeasurement::new(
                     anchor.ue_id,

@@ -342,6 +342,41 @@ async fn test_isac_task_sensing_data_recorded_via_channel() {
         .expect("IsacTask join must succeed");
 }
 
+/// Verify that the gNB ISAC task accepts an experimental range/RTT report
+/// and shuts down cleanly after processing it.
+#[tokio::test]
+async fn test_isac_task_processes_range_rtt_report() {
+    init_test_logging();
+
+    let (base, sixg_rx, _app_rx, _rrc_rx) = make_base_with_6g();
+    let sixg = base.sixg.as_ref().unwrap().clone();
+
+    let mut task = IsacTask::new(base);
+    let handle = tokio::spawn(async move { task.run(sixg_rx.isac_rx).await });
+
+    sixg.isac_tx
+        .send(IsacMessage::IsacRangeRttReport {
+            reporting_ue_id: 1,
+            peer_ue_id: 2,
+            distance_m: 12.5,
+            accuracy_m: 0.01,
+            measurement_count: 83,
+            method: "rtt".to_string(),
+        })
+        .await
+        .expect("range/RTT report send must succeed");
+
+    sixg.isac_tx
+        .shutdown()
+        .await
+        .expect("ISAC task shutdown must succeed");
+
+    timeout(Duration::from_secs(2), handle)
+        .await
+        .expect("ISAC task must finish within 2 seconds")
+        .expect("ISAC task join must succeed");
+}
+
 /// Directly verify `IsacManager::record_sensing_data` stores data that can
 /// be retrieved later – this is the crate-level assertion backing the task test.
 #[test]
@@ -445,8 +480,9 @@ async fn test_nwdaf_to_rrc_handover_recommendation_arrives() {
     sixg.nwdaf_tx
         .send(NwdafMessage::CellLoad {
             cell_id: 1,
-            prb_usage: 0.75,
+            prb_usage: Some(0.75),
             connected_ues: 12,
+            throughput_mbps: Some(10.0),
         })
         .await
         .expect("CellLoad send must succeed");

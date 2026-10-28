@@ -9,6 +9,8 @@ pub mod dcch_dispatch;
 pub mod handover_preparation;
 pub mod information_transfer;
 pub mod isac_config;
+pub mod isac_payload;
+pub mod isac_reporting;
 pub mod isl_handover;
 pub mod meas_config;
 pub mod measurement_report;

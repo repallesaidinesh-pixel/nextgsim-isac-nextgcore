@@ -125,6 +125,31 @@ impl GnbApp {
         sctp_rx: tokio::sync::mpsc::Receiver<TaskMessage<nextgsim_gnb::SctpMessage>>,
         disable_cmd: bool,
     ) {
+        // Initialize 6G handles before cloning task_base into RRC and other tasks.
+        // This ensures all task clones can access the ISAC sender when enabled.
+        #[cfg(any(
+            feature = "nextgsim-she",
+            feature = "nextgsim-nwdaf",
+            feature = "nextgsim-nkef",
+            feature = "nextgsim-isac",
+            feature = "nextgsim-agent",
+            feature = "nextgsim-fl",
+        ))]
+        let sixg_rxs = {
+            let any_6g = cfg!(feature = "nextgsim-she") && task_base.config.she_enabled
+                || cfg!(feature = "nextgsim-nwdaf") && task_base.config.nwdaf_enabled
+                || cfg!(feature = "nextgsim-nkef") && task_base.config.nkef_enabled
+                || cfg!(feature = "nextgsim-isac") && task_base.config.isac_enabled
+                || cfg!(feature = "nextgsim-agent") && task_base.config.agent_enabled
+                || cfg!(feature = "nextgsim-fl") && task_base.config.federated_learning_enabled;
+
+            if any_6g {
+                Some(task_base.init_6g_tasks(DEFAULT_CHANNEL_CAPACITY))
+            } else {
+                None
+            }
+        };
+
         // Spawn App task (handles status updates and CLI commands)
         let app_task_base = task_base.clone();
         tokio::spawn(async move {
@@ -215,16 +240,7 @@ impl GnbApp {
             feature = "nextgsim-fl",
         ))]
         {
-            let any_6g = cfg!(feature = "nextgsim-she") && task_base.config.she_enabled
-                || cfg!(feature = "nextgsim-nwdaf") && task_base.config.nwdaf_enabled
-                || cfg!(feature = "nextgsim-nkef") && task_base.config.nkef_enabled
-                || cfg!(feature = "nextgsim-isac") && task_base.config.isac_enabled
-                || cfg!(feature = "nextgsim-agent") && task_base.config.agent_enabled
-                || cfg!(feature = "nextgsim-fl") && task_base.config.federated_learning_enabled;
-
-            if any_6g {
-                let sixg_rxs = task_base.init_6g_tasks(DEFAULT_CHANNEL_CAPACITY);
-
+            if let Some(sixg_rxs) = sixg_rxs {
                 #[cfg(feature = "nextgsim-she")]
                 if task_base.config.she_enabled {
                     let mut she_task = SheTask::new(task_base.clone());

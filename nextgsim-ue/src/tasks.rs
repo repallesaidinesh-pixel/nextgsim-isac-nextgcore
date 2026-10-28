@@ -591,6 +591,22 @@ pub enum RrcMessage {
         /// Encoded data
         data: Vec<u8>,
     },
+
+    /// Geometry-derived sidelink range/RTT observation to report over uplink RRC.
+    ///
+    /// The measurement originates from configured simulator geometry, not observed
+    /// PC5 radio timing.
+    #[cfg(feature = "nextgsim-isac")]
+    IsacRangeRttReport {
+        /// Configured peer UE identifier.
+        peer_ue_id: u64,
+        /// Geometry-derived range in metres.
+        range_m: f64,
+        /// Modelled round-trip time in nanoseconds.
+        rtt_ns: u64,
+        /// Measurement timestamp in milliseconds since Unix epoch.
+        timestamp_ms: u64,
+    },
     /// This UE's sidelink interest changed, so the RRC layer must request resources
     /// from the network (TS 38.331 §5.8.3.2; issue #141).
     ///

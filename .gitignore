@@ -22,3 +22,16 @@
 #   cargo build --release && cp target/release/nr-{gnb,ue} docker/binaries/
 # (/binaries/ above is already ignored; this is the docker build context copy.)
 /docker/binaries/
+# Local experiment backups and machine-specific simulator configurations
+*.bak
+*.backup
+/config/gnb-ethernet.yaml
+/config/ue-ethernet.yaml
+/config/gnb-isac-host.yaml
+
+# Timestamped configuration backup naming patterns
+/config/*.bak-*
+/config/*.backup
+
+# Local source-file backups created during debugging
+*.bak-*

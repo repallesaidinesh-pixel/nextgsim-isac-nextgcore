@@ -60,6 +60,7 @@ sdap-dataplane = []
 # had zero consumers and the procedures it modelled are now implemented for real in
 # `sidelink::{pc5s, link, discovery, relay}`. See the note in `src/lib.rs`.
 sidelink = []
+nextgsim-isac = ["dep:nextgsim-isac"]
 
 [lints]
 workspace = true

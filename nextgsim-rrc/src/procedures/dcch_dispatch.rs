@@ -111,6 +111,15 @@ use super::ue_capability::{
     UeCapabilityInformationData,
 };
 
+/// One entry from the standardized application-layer measurement report.
+/// The container is opaque here; interpreting its bytes as ISAC data is a
+/// separate, experimental application-layer protocol.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MeasurementReportAppLayerData {
+    pub config_id: u8,
+    pub container: Option<Vec<u8>>,
+}
+
 /// A decoded UL-DCCH-Message, resolved to the concrete c1 message type the gNB
 /// dispatches on (TS 38.331 §6.2.1). Variants the gNB does not act on collapse
 /// to [`UlDcchMessage::Unsupported`].
@@ -147,9 +156,47 @@ pub enum UlDcchMessage {
     /// Rel-19 schema: the Rel-15 schema it replaced declared no sidelink IE at all,
     /// which is the blocker issue #141 was parked on.
     SidelinkUeInformation(SidelinkUeInformationParams),
+    /// `measurementReportAppLayer-r17` (`messageClassExtension.c2` index 9).
+    /// Its container remains opaque to the RRC dispatcher.
+    MeasurementReportAppLayer(Vec<MeasurementReportAppLayerData>),
+    /// Experimental ISAC range/RTT report decoded from its complete UL-DCCH message.
+    IsacRangeRttReport(crate::procedures::isac_reporting::IsacRangeRttReport),
     /// A well-formed UL-DCCH-Message the gNB does not dispatch on (e.g.
     /// locationMeasurementIndication, messageClassExtension).
     Unsupported,
+}
+
+/// Read the supported Rel-17 application-layer report variant.
+/// Returns `None` for other message types and `criticalExtensionsFuture`.
+pub fn read_measurement_report_app_layer(
+    msg: &UL_DCCH_Message,
+) -> Option<Vec<MeasurementReportAppLayerData>> {
+    let UL_DCCH_MessageType::MessageClassExtension(UL_DCCH_MessageType_messageClassExtension::C2(
+        UL_DCCH_MessageType_messageClassExtension_c2::MeasurementReportAppLayer_r17(report),
+    )) = &msg.message
+    else {
+        return None;
+    };
+
+    let MeasurementReportAppLayer_r17CriticalExtensions::MeasurementReportAppLayer_r17(ies) =
+        &report.critical_extensions
+    else {
+        return None;
+    };
+
+    Some(
+        ies.measurement_report_app_layer_list_r17
+            .0
+            .iter()
+            .map(|entry| MeasurementReportAppLayerData {
+                config_id: entry.meas_config_app_layer_id_r17.0,
+                container: entry
+                    .meas_report_app_layer_container_r17
+                    .as_ref()
+                    .map(|container| container.0.clone()),
+            })
+            .collect(),
+    )
 }
 
 /// Decode a UL-DCCH-Message and resolve it to the typed message the gNB acts on
@@ -165,10 +212,18 @@ pub fn dispatch_ul_dcch(bytes: &[u8]) -> Result<UlDcchMessage, RrcCodecError> {
         // `sidelinkUEInformationNR` is acted on (issue #141); every other arm, and the
         // `messageClassExtensionFuture` arm, stays `Unsupported`.
         UL_DCCH_MessageType::MessageClassExtension(_) => {
-            return Ok(match read_sidelink_ue_information(&msg) {
-                Some(params) => UlDcchMessage::SidelinkUeInformation(params),
-                None => UlDcchMessage::Unsupported,
-            })
+            if let Some(params) = read_sidelink_ue_information(&msg) {
+                return Ok(UlDcchMessage::SidelinkUeInformation(params));
+            }
+            if let Ok(report) =
+                crate::procedures::isac_reporting::decode_isac_range_rtt_report(bytes)
+            {
+                return Ok(UlDcchMessage::IsacRangeRttReport(report));
+            }
+            if let Some(reports) = read_measurement_report_app_layer(&msg) {
+                return Ok(UlDcchMessage::MeasurementReportAppLayer(reports));
+            }
+            return Ok(UlDcchMessage::Unsupported);
         }
     };
 
@@ -343,6 +398,54 @@ mod tests {
     };
 
     #[test]
+    fn measurement_report_app_layer_r17_uper_round_trip() {
+        use crate::codec::{decode_rrc, encode_rrc, generated::*};
+
+        let original = UL_DCCH_Message {
+            message: UL_DCCH_MessageType::MessageClassExtension(
+                UL_DCCH_MessageType_messageClassExtension::C2(
+                    UL_DCCH_MessageType_messageClassExtension_c2::MeasurementReportAppLayer_r17(
+                        MeasurementReportAppLayer_r17 {
+                            critical_extensions:
+                                MeasurementReportAppLayer_r17CriticalExtensions::MeasurementReportAppLayer_r17(
+                                    MeasurementReportAppLayer_r17_IEs {
+                                        measurement_report_app_layer_list_r17:
+                                            MeasurementReportAppLayerList_r17(vec![
+                                                MeasReportAppLayer_r17 {
+                                                    meas_config_app_layer_id_r17:
+                                                        MeasConfigAppLayerId_r17(1),
+                                                    meas_report_app_layer_container_r17:
+                                                        Some(
+                                                            MeasReportAppLayer_r17MeasReportAppLayerContainer_r17(
+                                                                vec![0x49, 0x53, 0x41, 0x43],
+                                                            ),
+                                                        ),
+                                                    app_layer_session_status_r17: None,
+                                                    ran_visible_measurements_r17: None,
+                                                },
+                                            ]),
+                                        late_non_critical_extension: None,
+                                        non_critical_extension: None,
+                                    },
+                                ),
+                        },
+                    ),
+                ),
+            ),
+        };
+
+        let bytes = encode_rrc(&original).expect("encode application-layer report");
+        let decoded: UL_DCCH_Message = decode_rrc(&bytes).expect("decode application-layer report");
+
+        assert_eq!(decoded, original, "decoded structure must match");
+        assert_eq!(
+            encode_rrc(&decoded).expect("re-encode application-layer report"),
+            bytes,
+            "UPER encoding must round-trip byte-for-byte"
+        );
+    }
+
+    #[test]
     fn dispatch_rrc_setup_complete() {
         let nas = vec![0x7E, 0x00, 0x41];
         let bytes = encode_rrc_setup_complete(&RrcSetupCompleteParams {
@@ -501,6 +604,57 @@ mod tests {
             dispatch_ul_dcch(&bytes).unwrap(),
             UlDcchMessage::Unsupported
         ));
+    }
+
+    /// The Rel-17 application-layer report reaches the dispatcher with its
+    /// configuration ID and opaque container intact.
+    #[test]
+    fn measurement_report_app_layer_r17_dispatches_with_container_intact() {
+        let payload = vec![0x49, 0x53, 0x41, 0x43, 0x01, 0x02];
+
+        let msg = UL_DCCH_Message {
+            message: UL_DCCH_MessageType::MessageClassExtension(
+                UL_DCCH_MessageType_messageClassExtension::C2(
+                    UL_DCCH_MessageType_messageClassExtension_c2::MeasurementReportAppLayer_r17(
+                        MeasurementReportAppLayer_r17 {
+                            critical_extensions:
+                                MeasurementReportAppLayer_r17CriticalExtensions::
+                                    MeasurementReportAppLayer_r17(
+                                        MeasurementReportAppLayer_r17_IEs {
+                                            measurement_report_app_layer_list_r17:
+                                                MeasurementReportAppLayerList_r17(vec![
+                                                    MeasReportAppLayer_r17 {
+                                                        meas_config_app_layer_id_r17:
+                                                            MeasConfigAppLayerId_r17(3),
+                                                        meas_report_app_layer_container_r17:
+                                                            Some(
+                                                                MeasReportAppLayer_r17MeasReportAppLayerContainer_r17(
+                                                                    payload.clone(),
+                                                                ),
+                                                            ),
+                                                        app_layer_session_status_r17: None,
+                                                        ran_visible_measurements_r17: None,
+                                                    },
+                                                ]),
+                                            late_non_critical_extension: None,
+                                            non_critical_extension: None,
+                                        },
+                                    ),
+                        },
+                    ),
+                ),
+            ),
+        };
+
+        let bytes = crate::codec::encode_rrc(&msg).expect("encode report");
+        match dispatch_ul_dcch(&bytes).expect("dispatch report") {
+            UlDcchMessage::MeasurementReportAppLayer(reports) => {
+                assert_eq!(reports.len(), 1);
+                assert_eq!(reports[0].config_id, 3);
+                assert_eq!(reports[0].container, Some(payload));
+            }
+            other => panic!("expected application-layer report, got {other:?}"),
+        }
     }
 
     /// A `sidelinkUEInformationNR` reaches the gNB as a TYPED message with its IEs

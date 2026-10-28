@@ -127,6 +127,20 @@ impl Task for IsacTask {
                                 );
                             }
                         }
+                        IsacMessage::IsacRangeRttReport {
+                            reporting_ue_id,
+                            peer_ue_id,
+                            distance_m,
+                            accuracy_m,
+                            measurement_count,
+                            method,
+                        } => {
+                            info!(
+                                "ISAC report: reporting UE {}, peer UE {}, distance={:.3} m, accuracy={:.3} m, measurements={}, method={}",
+                                reporting_ue_id, peer_ue_id, distance_m, accuracy_m,
+                                measurement_count, method
+                            );
+                        }
                         IsacMessage::FusionRequest { ue_id, source_ids } => {
                             debug!(
                                 "ISAC: Fusion request for UE {} from {} sources",

@@ -56,6 +56,11 @@ use nextgsim_rrc::procedures::dcch_dispatch::{
 use nextgsim_rrc::procedures::information_transfer::{
     encode_ul_information_transfer, UlInformationTransferParams,
 };
+
+#[cfg(feature = "nextgsim-isac")]
+use nextgsim_rrc::procedures::isac_payload::{
+    encode_isac_range_rtt_app_layer, IsacRangeRttPayload,
+};
 use nextgsim_rrc::procedures::measurement_report::{
     db_to_rsrq_range, db_to_sinr_range, dbm_to_eutra_rsrp_range, dbm_to_rsrp_range,
     encode_measurement_report, MeasCellResults, MeasResult2Nr, MeasResultCellNr, MeasResultEutra,
@@ -4897,6 +4902,36 @@ impl Task for RrcTask {
                             #[cfg(feature = "nextgsim-isac")]
                             RrcMessage::SixgSensingMeasurement { measurement_type, measurements } => {
                                 self.route_6g_sensing(measurement_type, measurements).await;
+                            }
+                            #[cfg(feature = "nextgsim-isac")]
+                            RrcMessage::IsacRangeRttReport {
+                                peer_ue_id,
+                                range_m,
+                                rtt_ns,
+                                timestamp_ms,
+                            } => {
+                                let payload = IsacRangeRttPayload {
+                                    peer_ue_id,
+                                    range_m,
+                                    rtt_ns,
+                                    timestamp_ms,
+                                };
+
+                                match encode_isac_range_rtt_app_layer(&payload, 1) {
+                                    Ok(bytes) => {
+                                        info!(
+                                            "Sending ISAC range/RTT report: peer={}, range={:.3}m, RTT={}ns, timestamp={}ms",
+                                            peer_ue_id, range_m, rtt_ns, timestamp_ms
+                                        );
+                                        self.send_uplink_rrc(
+                                            RrcChannel::UlDcch,
+                                            OctetString::from_slice(&bytes),
+                                        ).await;
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to encode ISAC range/RTT RRC report: {e}");
+                                    }
+                                }
                             }
                             #[cfg(feature = "nextgsim-semantic")]
                             RrcMessage::SixgSemanticData { content_type, data } => {

@@ -523,6 +523,17 @@ impl RlsTask {
         heartbeat: &nextgsim_rls::RlsHeartbeat,
     ) {
         let (ack, events) = self.cell_tracker.process_heartbeat(sti, source, heartbeat);
+        debug!(
+            "RLS heartbeat processed: source={}, sti={}, sim_pos=({},{},{}), ack_present={}, tracker_events={}, tracked_ues={}",
+            source,
+            sti,
+            heartbeat.sim_pos.x,
+            heartbeat.sim_pos.y,
+            heartbeat.sim_pos.z,
+            ack.is_some(),
+            events.len(),
+            self.cell_tracker.ue_count()
+        );
 
         // Process tracker events
         for event in events {

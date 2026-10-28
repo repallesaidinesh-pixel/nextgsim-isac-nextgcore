@@ -292,6 +292,7 @@ cargo audit
 - [CHANGELOG.md](CHANGELOG.md) — release notes and version history
 - [docs/ci-and-release.md](docs/ci-and-release.md) — CI pipeline and release process
 - [docs/architecture.md](docs/architecture.md) · [docs/nextgcore-integration.md](docs/nextgcore-integration.md) — design and the matched-sim E2E with nextgcore
+- [docs/isac-implementation.md](docs/isac-implementation.md) — experimental ISAC uplink reporting, simulator verification, and limitations
 
 ## Contributing
 
