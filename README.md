@@ -14,6 +14,41 @@ A pure Rust implementation of a 5G User Equipment (UE) and gNodeB (gNB) simulato
 - **ML Inference**: ONNX Runtime (`ort`) integration available; no models ship, so the operational AI paths use TF-IDF / mean-pooling / linear-extrapolation fallbacks
 - **Async Runtime**: Built on Tokio for high-performance concurrent operations
 
+## Experimental ISAC Integration
+
+This repository includes an experimental software integration that carries
+simulated UE ranging observations to the gNB through an uplink RRC
+`MeasurementReportAppLayer-r17` message. The inner application payload is
+simulator-specific and is not a standardized 3GPP ISAC payload.
+
+### Implemented reporting path
+
+```text
+UE ranging simulator
+        |
+        v
+Experimental ISAC application payload
+        |
+        v
+Uplink RRC MeasurementReportAppLayer-r17
+        |
+        v
+gNB RRC decode and dispatch
+        |
+        v
+gNB ISAC task receives and logs report
+```
+
+**Scope and limitations**
+
+- Ranging values are simulator-generated, not independently measured radio results.
+- The reported `0.010 m` accuracy is a simulator estimate, not a validated physical error bound.
+- NWDAF cell occupancy is traffic-derived, not a direct physical-layer PRB measurement.
+- USRP/SDR hardware validation has not yet been performed.
+- This experimental implementation does not establish 3GPP conformance.
+
+See [the ISAC implementation guide](docs/isac-implementation.md) for payload details, configuration, tests, and reproduction instructions.
+
 ## Quickstart
 
 ### Option 1: Docker (Recommended)
@@ -184,7 +219,7 @@ The simulator includes a set of 6G/AI research prototypes (disabled by default a
 | **SHE** | 3-tier edge compute (Local/Regional/Core) with latency-aware placement | 3GPP TS 23.558 |
 | **NWDAF** | ML-powered analytics: trajectory prediction, handover optimization | 3GPP TS 23.288 |
 | **NKEF** | Knowledge graphs, semantic search, RAG support for LLM integration | - |
-| **ISAC** | ToA/AoA/Doppler sensing, multi-source fusion, positioning | 3GPP TR 22.837 |
+| **ISAC** | Experimental simulated ranging and uplink report handling; broader sensing concepts are research prototypes | 3GPP TR 22.837 (reference only) |
 | **Agent** | OAuth 2.0 authentication, intent-based networking, multi-agent coordination | - |
 | **FL** | FedAvg aggregation, differential privacy, secure model distribution | 3GPP TR 23.700-80 |
 | **Semantic** | Learned codecs, channel-adaptive compression, task-oriented transmission | - |
@@ -217,12 +252,12 @@ upf_port: 2152
 
 ```yaml
 # config/ue.yaml
-supi: 'imsi-999700000000001'
+supi: 'imsi-<YOUR_SUBSCRIBER_ID>'
 hplmn:
   mcc: 999
   mnc: 70
-key: '465B5CE8B199B49FAA5F0A2EE238A6BC'
-op: 'E8ED289DEBA952E4283B54E88E6183CA'
+key: '<YOUR_SUBSCRIBER_KEY_HEX>'
+op: '<YOUR_OPERATOR_KEY_HEX>'
 op_type: OPC
 amf: '8000'
 gnb_search_list:
